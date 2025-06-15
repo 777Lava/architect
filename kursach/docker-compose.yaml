@@ -1,0 +1,112 @@
+
+services:
+  rabbitmq:
+    image: rabbitmq:management
+    container_name: rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+
+  handler:
+    build:
+      context: .
+      dockerfile: handler/Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      - APP_PORT=8080
+      - DB_USER=postgres
+      - DB_PASSWORD=postgres
+      - DB_HOST=db
+      - DB_PORT=5432
+      - DB_NAME=postgres
+      - RD_HOST=keydb
+      - RB_HOST=rabbitmq
+  
+    depends_on:
+      - worker
+    
+  worker:
+    build:
+      context: .
+      dockerfile: worker/Dockerfile
+    ports:
+      - "8081:8081"
+    environment:
+      - APP_PORT=8081
+      - DB_USER=postgres
+      - DB_PASSWORD=postgres
+      - DB_HOST=db
+      - DB_PORT=5432
+      - DB_NAME=postgres
+      - RD_HOST=keydb
+      - RB_HOST=rabbitmq
+    depends_on:
+      - db
+      - rabbitmq
+      - prometheus
+      - grafana
+  db:
+    image: postgres:15
+    ports:
+      - "5433:5432" 
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=postgres
+
+  keydb:
+    image: "eqalpha/keydb:x86_64_v5.3.3"
+    container_name: keydb
+    command: "keydb-server /etc/keydb/redis.conf --server-threads 2"
+    volumes:
+#      - "./redis.conf:/etc/keydb/redis.conf"
+      - "data:/data"
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
+  # Сервис Prometheus
+  prometheus:
+      image: prom/prometheus:v2.44.0
+      container_name: prometheus-archapp-lab4
+      ports:
+         - "9090:9090"   # Prometheus web UI
+      volumes:
+         - ./handler/prometheus.yml:/etc/prometheus/prometheus.yml  # Конфигурационный файл
+         - ./handler/alert_rules.yml:/etc/prometheus/alert_rules.yml  # Файл с алертами
+
+   # Сервис Grafana
+  grafana:
+      image: grafana/grafana
+      container_name: grafana-archapp-lab4
+      ports:
+         - "3000:3000"   # Grafana web UI
+      environment:
+         - GF_SECURITY_ADMIN_PASSWORD=admin  # Пароль администратора
+      volumes:
+         - grafana-data:/var/lib/grafana
+      depends_on:
+         - prometheus  # Дожидается прометея
+
+   # Сервис Alertmanager
+  alertmanager:
+      image: prom/alertmanager:v0.24.0
+      container_name: alertmanager-archapp-lab4
+      ports:
+         - "9093:9093"   # Alertmanager web UI
+      volumes:
+         - ./alertmanager.yml:/etc/alertmanager/alertmanager.yml  # Конфигурационный файл
+
+
+volumes:
+  data:
+    driver: local
+  grafana-data:
+    driver: local
+  postgres-data:
+    driver: local
+
+
